@@ -21,21 +21,39 @@
 
 <main>
   <section id="view-board" class="view">
-    <div class="toolbar">
-      <div class="summary" id="summary"></div>
-      <div class="actions">
-        <button id="refresh" class="ghost">Refresh orders</button>
-        <a id="csv" class="btn primary" href="/api/export/pirateship.csv" download>1. Download Pirate Ship CSV</a>
-        <button id="import-btn">2. Import Pirate Ship tracking</button>
+    <ol class="steps">
+      <li class="step" id="step-1">
+        <div class="step-head"><span class="num">1</span><h2>Choose what ships today</h2></div>
+        <div class="chips" id="product-chips"></div>
+        <div class="step-actions">
+          <button id="hold-others" class="small">Hold everything not shown</button>
+          <button id="release-all" class="small">Release all held</button>
+          <button id="refresh" class="small ghost">Refresh from Wix</button>
+        </div>
+      </li>
+      <li class="step" id="step-2">
+        <div class="step-head"><span class="num">2</span><h2>Buy labels in Pirate Ship</h2></div>
+        <p class="help">Download, drag the file into Pirate Ship, review, and buy. Then export their shipments report.</p>
+        <a id="csv" class="btn primary" href="/api/export/pirateship.csv" download>Download Pirate Ship CSV</a>
+        <button id="ship-all" class="btn" hidden>Buy labels via Shippo instead</button>
+      </li>
+      <li class="step" id="step-3">
+        <div class="step-head"><span class="num">3</span><h2>Mark orders shipped in Wix</h2></div>
+        <p class="help">Import the Pirate Ship shipments report. Each Wix order gets its tracking number and the customer is emailed.</p>
+        <button id="import-btn" class="btn">Import shipments report</button>
         <input type="file" id="import-file" accept=".csv,text/csv" hidden />
-        <button id="ship-all" class="ghost" hidden>Buy labels via Shippo</button>
-      </div>
-    </div>
+      </li>
+    </ol>
+
     <div id="notice" class="notice" hidden></div>
+
+    <div class="table-head">
+      <div class="summary" id="summary"></div>
+    </div>
     <table id="orders">
       <thead>
         <tr>
-          <th>Order</th><th>Ship to</th><th>Items</th><th>Wt (lb)</th><th>Box</th><th>Service</th><th>Flags</th><th></th>
+          <th>Order</th><th>Ship to</th><th>Items</th><th>Box</th><th>Service</th><th>Wt (lb)</th><th>Flags</th><th></th>
         </tr>
       </thead>
       <tbody></tbody>
@@ -45,7 +63,7 @@
   <section id="view-picklist" class="view" hidden>
     <div class="toolbar">
       <h2>Pick list</h2>
-      <button class="ghost" onclick="window.print()">Print</button>
+      <button class="btn primary" onclick="window.print()">Print</button>
     </div>
     <div id="picklist"></div>
   </section>
@@ -53,10 +71,10 @@
   <section id="view-history" class="view" hidden>
     <div class="toolbar">
       <h2>Shipped</h2>
-      <a class="btn" id="merged-pdf" href="/api/labels/merged.pdf" target="_blank">Today's labels PDF</a>
+      <a class="btn" id="merged-pdf" href="/api/labels/merged.pdf" target="_blank" hidden>Today's labels PDF</a>
     </div>
     <table id="history">
-      <thead><tr><th>Order</th><th>Carrier</th><th>Service</th><th>Tracking</th><th>Cost</th><th>Purchased</th><th>Store</th><th></th></tr></thead>
+      <thead><tr><th>Order</th><th>Carrier</th><th>Service</th><th>Tracking</th><th>Cost</th><th>Shipped</th><th>Wix</th><th></th></tr></thead>
       <tbody></tbody>
     </table>
   </section>
@@ -65,11 +83,13 @@
     <div class="toolbar">
       <h2>Rules &amp; boxes</h2>
       <div class="actions">
+        <span id="settings-dirty" class="help" hidden>Unsaved changes</span>
         <button id="settings-save" class="primary">Save</button>
       </div>
     </div>
-    <p class="help">Rules are checked top to bottom; the first match decides the box and service. Orders that match nothing use the defaults.</p>
+    <div id="settings-notice" class="notice" hidden></div>
     <div id="settings"></div>
+    <div class="toolbar bottom"><button id="settings-save-2" class="primary">Save changes</button></div>
   </section>
 </main>
 

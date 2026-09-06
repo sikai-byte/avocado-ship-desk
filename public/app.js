@@ -2,7 +2,11 @@ const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
-const state = { rows: [], settings: null, status: null, view: "board" };
+const state = { rows: [], settings: null, status: null, view: "board", filter: null, downloaded: false };
+
+/** "Choquette Avocado Box (late September)" -> "Choquette Avocado Box" */
+const productKey = (name) => name.replace(/\s*\(.*?\)\s*/g, " ").trim();
+const plural = (n, s) => `${n} ${s}${n === 1 ? "" : "s"}`;
 
 async function api(path, opts = {}) {
   const res = await fetch(path, { headers: { "Content-Type": "application/json", ...(opts.headers || {}) }, ...opts });
@@ -40,10 +44,16 @@ async function loadStatus() {
     `<span class="pill ${s.shippoEnabled ? "on" : "off"}">Shippo: ${s.shippoEnabled ? "connected" : "off"}</span>` +
     `<span class="pill ${s.shipDay ? "on" : ""}">${s.shipDay ? "Ship day" : "Ship days: " + s.shipDays.map((d) => days[d]).join("/")}</span>`;
   $("#ship-all").hidden = !s.shippoEnabled;
+  $("#merged-pdf").hidden = !s.shippoEnabled;
 }
 
 // ---------- board ----------
 async function loadOrders(refresh = false) {
+  if (refresh) {
+    $("#refresh").disabled = true;
+    $("#refresh").textContent = "Refreshing…";
+  }
+  if (!state.rows.length) $("#orders tbody").innerHTML = `<tr><td colspan="8" class="help">Loading orders…</td></tr>`;
   try {
     const data = await api(`/api/orders${refresh ? "?refresh=1" : ""}`);
     state.rows = data.rows;
@@ -51,26 +61,68 @@ async function loadOrders(refresh = false) {
     renderBoard();
   } catch (e) {
     notice(`Could not load orders: ${e.message}`, true);
+  } finally {
+    $("#refresh").disabled = false;
+    $("#refresh").textContent = "Refresh from Wix";
   }
+}
+
+function visibleRows() {
+  if (!state.filter) return state.rows;
+  return state.rows.filter((r) => r.order.items.some((i) => productKey(i.name) === state.filter));
+}
+
+function renderChips() {
+  const counts = new Map();
+  for (const r of state.rows) {
+    if (r.label) continue;
+    for (const k of new Set(r.order.items.map((i) => productKey(i.name)))) counts.set(k, (counts.get(k) || 0) + 1);
+  }
+  const chips = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  if (state.filter && !counts.has(state.filter)) state.filter = null;
+  $("#product-chips").innerHTML =
+    `<button class="chip ${state.filter ? "" : "on"}" data-key="">All open orders <b>${state.rows.filter((r) => !r.label).length}</b></button>` +
+    chips.map(([k, n]) => `<button class="chip ${state.filter === k ? "on" : ""}" data-key="${esc(k)}">${esc(k)} <b>${n}</b></button>`).join("");
+  $$("#product-chips .chip").forEach((c) =>
+    c.addEventListener("click", () => {
+      state.filter = c.dataset.key || null;
+      renderBoard();
+    }),
+  );
+  const shownIds = new Set(visibleRows().map((r) => r.order.id));
+  const others = state.rows.filter((r) => !r.label && !r.hold && !shownIds.has(r.order.id)).length;
+  const ho = $("#hold-others");
+  ho.hidden = !state.filter || others === 0;
+  ho.textContent = `Ship only these — hold the other ${others}`;
 }
 
 function boxName(id) { return state.settings.boxes.find((b) => b.id === id)?.name ?? id; }
 function serviceName(id) { return state.settings.services.find((s) => s.id === id)?.name ?? id; }
 
 function renderBoard() {
+  renderChips();
+  const rows = visibleRows();
   const ready = state.rows.filter((r) => !r.hold && !r.label);
   const held = state.rows.filter((r) => r.hold && !r.label);
-  const flagged = ready.filter((r) => r.assignment.warnings.length);
-  const weight = ready.reduce((s, r) => s + r.assignment.packageWeightLb, 0);
+  const flagged = ready.filter((r) => r.assignment.warnings.some((w) => /Incomplete|Missing|Unknown|International/.test(w)));
+  const shown = state.filter ? `<b>${rows.length}</b> shown · ` : "";
   $("#summary").innerHTML =
-    `<b>${ready.length}</b> ready to ship · <b>${held.length}</b> held · <b>${flagged.length}</b> flagged · ${weight.toFixed(1)} lb total`;
-  $("#ship-all").textContent = `Buy ${ready.length} label${ready.length === 1 ? "" : "s"} via Shippo`;
-  $("#csv").textContent = `1. Download Pirate Ship CSV (${ready.length})`;
+    `${shown}<b>${ready.length}</b> will be in the CSV · <b>${held.length}</b> held` +
+    (flagged.length ? ` · <span class="warn"><b>${flagged.length}</b> need attention</span>` : "");
+  $("#release-all").hidden = held.length === 0;
+  $("#ship-all").textContent = `Buy ${plural(ready.length, "label")} via Shippo instead`;
+  const csv = $("#csv");
+  csv.textContent = `Download Pirate Ship CSV · ${plural(ready.length, "order")}`;
+  csv.classList.toggle("disabled", ready.length === 0);
+  csv.setAttribute("aria-disabled", String(ready.length === 0));
+  $("#step-2").classList.toggle("done", state.downloaded);
+  $("#step-2 .num").textContent = state.downloaded ? "✓" : "2";
+  $("#step-3").classList.toggle("active", state.downloaded);
 
   const boxOpts = (sel) => state.settings.boxes.map((b) => `<option value="${esc(b.id)}" ${b.id === sel ? "selected" : ""}>${esc(b.name)}</option>`).join("");
   const svcOpts = (sel) => state.settings.services.map((s) => `<option value="${esc(s.id)}" ${s.id === sel ? "selected" : ""}>${esc(s.name)}</option>`).join("");
 
-  $("#orders tbody").innerHTML = state.rows
+  $("#orders tbody").innerHTML = rows
     .map((r) => {
       const o = r.order;
       const a = r.assignment;
@@ -78,11 +130,7 @@ function renderBoard() {
       const flags = a.warnings
         .map((w) => `<span class="flag ${/Incomplete|Missing|Unknown|International/.test(w) ? "bad" : ""}">${esc(w)}</span>`)
         .join("");
-      const ruleTag = a.manual
-        ? `<span class="flag info">manual</span>`
-        : rule
-          ? `<span class="flag info" title="${esc(rule.name)}">rule</span>`
-          : "";
+      const why = a.manual ? "set by hand" : rule ? `rule: ${rule.name}` : "default (no rule matched)";
       const shipped = r.label
         ? `<span class="flag info">${esc(r.label.carrier.toUpperCase())} ${esc(r.label.trackingNumber)}</span>`
         : "";
@@ -92,17 +140,17 @@ function renderBoard() {
             <span class="sub">${esc(o.shipTo.street1)} ${esc(o.shipTo.street2 || "")}</span>
             <span class="sub">${esc(o.shipTo.city)}, ${esc(o.shipTo.state)} ${esc(o.shipTo.zip)} ${o.shipTo.country !== "US" ? esc(o.shipTo.country) : ""}</span>
             ${o.buyerNote ? `<span class="sub">📝 ${esc(o.buyerNote)}</span>` : ""}</td>
-        <td>${o.items.map((i) => `${i.quantity} × ${esc(i.name)} <span class="sub mono">${esc(i.sku)}</span>`).join("")}
-            ${o.shippingOption ? `<span class="sub">Chose: ${esc(o.shippingOption)}</span>` : ""}</td>
-        <td>${a.packageWeightLb.toFixed(2)}<span class="sub">items ${o.totalWeightLb.toFixed(2)}</span></td>
-        <td><select class="box ${a.manual ? "manual" : ""}" ${r.label ? "disabled" : ""}>${boxOpts(a.boxId)}</select></td>
-        <td><select class="service ${a.manual ? "manual" : ""}" ${r.label ? "disabled" : ""}>${svcOpts(a.serviceId)}</select>${ruleTag}</td>
+        <td>${o.items.map((i) => `<div>${i.quantity} × ${esc(i.name)}${i.sku ? ` <span class="sub mono inline">${esc(i.sku)}</span>` : ""}</div>`).join("")}
+            ${o.shippingOption && !/^standard$/i.test(o.shippingOption) ? `<span class="sub">Customer chose: ${esc(o.shippingOption)}</span>` : ""}</td>
+        <td><select class="box ${a.manual ? "manual" : ""}" ${r.label ? "disabled" : ""} title="${esc(why)}">${boxOpts(a.boxId)}</select></td>
+        <td><select class="service ${a.manual ? "manual" : ""}" ${r.label ? "disabled" : ""} title="${esc(why)}">${svcOpts(a.serviceId)}</select>
+            <span class="sub why" title="${esc(why)}">${esc(why)}${a.manual ? ` · <a href="#" class="reset">undo</a>` : ""}</span></td>
+        <td>${a.packageWeightLb.toFixed(1)}</td>
         <td>${flags}${a.note ? `<span class="flag info">${esc(a.note)}</span>` : ""}</td>
         <td class="row-actions">
           ${r.label
             ? r.label.labelUrl ? `<a class="btn small" href="${esc(r.label.labelUrl)}" target="_blank">Label</a>` : ""
-            : `<button class="small hold">${r.hold ? "Release" : "Hold"}</button>
-               ${a.manual ? `<button class="small reset" title="Back to rule result">Reset</button>` : ""}
+            : `<button class="hold ${r.hold ? "release" : ""}">${r.hold ? "Release" : "Hold"}</button>
                ${state.status?.shippoEnabled ? `<button class="small buy">Buy label</button>` : ""}`}
         </td>
       </tr>`;
@@ -117,7 +165,8 @@ function renderBoard() {
       const row = state.rows.find((r) => r.order.id === id);
       override(id, { hold: !row.hold });
     });
-    $(".reset", tr)?.addEventListener("click", async () => {
+    $(".reset", tr)?.addEventListener("click", async (e) => {
+      e.preventDefault();
       await api(`/api/orders/${id}/override`, { method: "DELETE" });
       loadOrders();
     });
@@ -126,9 +175,43 @@ function renderBoard() {
 }
 
 async function override(id, patch) {
-  await api(`/api/orders/${id}/override`, { method: "POST", body: JSON.stringify(patch) });
+  const row = state.rows.find((r) => r.order.id === id);
+  if (row && patch.hold !== undefined) row.hold = patch.hold; // optimistic
+  if (row && patch.boxId) row.assignment.boxId = patch.boxId;
+  if (row && patch.serviceId) row.assignment.serviceId = patch.serviceId;
+  renderBoard();
+  try {
+    await api(`/api/orders/${id}/override`, { method: "POST", body: JSON.stringify(patch) });
+  } catch (e) {
+    notice(`Change not saved: ${e.message}`, true);
+  }
   loadOrders();
 }
+
+async function bulkHold(ids, hold) {
+  if (!ids.length) return;
+  for (const r of state.rows) if (ids.includes(r.order.id)) r.hold = hold;
+  renderBoard();
+  try {
+    await api("/api/orders/hold", { method: "POST", body: JSON.stringify({ orderIds: ids, hold }) });
+    notice(hold ? `${plural(ids.length, "order")} held — they stay out of the CSV until you release them.` : `${plural(ids.length, "order")} released.`);
+  } catch (e) {
+    notice(`Change not saved: ${e.message}`, true);
+  }
+  loadOrders();
+}
+
+$("#hold-others").addEventListener("click", () => {
+  const shown = new Set(visibleRows().map((r) => r.order.id));
+  bulkHold(state.rows.filter((r) => !r.label && !r.hold && !shown.has(r.order.id)).map((r) => r.order.id), true);
+});
+$("#release-all").addEventListener("click", () => bulkHold(state.rows.filter((r) => r.hold && !r.label).map((r) => r.order.id), false));
+$("#csv").addEventListener("click", (e) => {
+  if ($("#csv").classList.contains("disabled")) return e.preventDefault();
+  state.downloaded = true;
+  notice("CSV downloaded. In Pirate Ship: Ship → Upload a spreadsheet → drop the file → Buy. Then Reports → Shipments → export, and import it in step 3.");
+  renderBoard();
+});
 
 async function buyLabels(orderIds) {
   const n = orderIds ? orderIds.length : state.rows.filter((r) => !r.hold && !r.label).length;
@@ -160,9 +243,13 @@ $("#import-file").addEventListener("change", async (e) => {
   notice("Importing tracking…");
   try {
     const res = await api("/api/import/tracking", { method: "POST", headers: { "Content-Type": "text/csv" }, body: csv });
-    let msg = `Imported ${res.imported} tracking number${res.imported === 1 ? "" : "s"}; ${res.synced} marked shipped in the store.`;
+    let msg = res.imported
+      ? `Done — ${plural(res.synced, "Wix order")} marked shipped with tracking; Wix is emailing those customers now.`
+      : "No matching orders found in that file. Make sure it's the Pirate Ship shipments report (Reports → Shipments).";
+    if (res.imported && res.synced < res.imported) msg += `\n${res.imported - res.synced} tracking number(s) saved but not yet on Wix — retry the import to sync them.`;
     if (res.errors.length) msg += "\n" + res.errors.map((x) => `  #${x.orderNumber}: ${x.error}`).join("\n");
     notice(msg, res.imported === 0);
+    state.downloaded = false;
     loadOrders(true);
   } catch (err) {
     notice(err.message, true);
@@ -221,74 +308,103 @@ async function loadHistory() {
 }
 
 // ---------- settings ----------
-function renderSettings() {
-  const s = JSON.parse(JSON.stringify(state.settings));
+function settingsNotice(msg, isError = false) {
+  const el = $("#settings-notice");
+  el.hidden = !msg;
+  el.textContent = msg || "";
+  el.classList.toggle("error", isError);
+}
+
+function markDirty(dirty) {
+  $("#settings-dirty").hidden = !dirty;
+}
+
+function renderSettings(keepDraft = false) {
+  const s = keepDraft && state.draft ? state.draft : JSON.parse(JSON.stringify(state.settings));
   state.draft = s;
   const el = $("#settings");
+  const shippo = Boolean(state.status?.shippoEnabled);
   const boxOpts = (sel) => s.boxes.map((b) => `<option value="${esc(b.id)}" ${b.id === sel ? "selected" : ""}>${esc(b.name)}</option>`).join("");
   const svcOpts = (sel) => s.services.map((x) => `<option value="${esc(x.id)}" ${x.id === sel ? "selected" : ""}>${esc(x.name)}</option>`).join("");
-  const field = (label, path, type = "text") => `<label>${label}<input type="${type}" data-path="${path}" value="${esc(get(s, path))}" /></label>`;
+  const field = (label, path, type = "text", extra = "") => `<label>${label}<input type="${type}" data-path="${path}" value="${esc(get(s, path))}" ${extra} /></label>`;
+  const opt = (label, path, val, extra = "") => `<label>${label}<input type="number" data-path="${path}" data-opt value="${val ?? ""}" ${extra} /></label>`;
+  const hasMore = (w) => Boolean((w.skus && w.skus.length) || (w.states && w.states.length) || w.shippingOptionContains || w.minQty != null || w.maxQty != null || w.minWeightLb != null || w.maxWeightLb != null);
 
   el.innerHTML = `
-    <div class="card"><h3>Ship from</h3><div class="grid">
-      ${field("Name", "shipFrom.name")}${field("Street", "shipFrom.street1")}${field("City", "shipFrom.city")}
-      ${field("State", "shipFrom.state")}${field("ZIP", "shipFrom.zip")}${field("Phone", "shipFrom.phone")}${field("Email", "shipFrom.email")}
-    </div></div>
+    <div class="card"><h3>Rules</h3>
+      <p class="help">Checked top to bottom; the first rule that matches an order decides its box, service and shipping weight. Orders that match nothing use the defaults below.</p>
+      ${s.rules.map((r, i) => `<div class="rule">
+        <div class="rule-main">
+          <span class="num">${i + 1}</span>
+          <label class="grow">Rule name<input data-path="rules.${i}.name" value="${esc(r.name)}" /></label>
+          <label class="grow">When product name contains<input data-path="rules.${i}.when.productContains" data-opt value="${esc(r.when.productContains || "")}" placeholder="e.g. Choquette" /></label>
+          <label>Channel<select data-path="rules.${i}.when.channel"><option value="">any</option><option ${r.when.channel === "retail" ? "selected" : ""}>retail</option><option ${r.when.channel === "wholesale" ? "selected" : ""}>wholesale</option></select></label>
+          <span class="arrow">→</span>
+          <label>Box<select data-path="rules.${i}.boxId">${boxOpts(r.boxId)}</select></label>
+          <label>Service<select data-path="rules.${i}.serviceId">${svcOpts(r.serviceId)}</select></label>
+          ${opt("Ship weight (lb)", `rules.${i}.packageWeightLb`, r.packageWeightLb, 'step="0.1" min="0" placeholder="auto"')}
+          <div class="row-actions">
+            <button class="small" data-move="-1" data-i="${i}" title="Move up" ${i === 0 ? "disabled" : ""}>↑</button>
+            <button class="small" data-move="1" data-i="${i}" title="Move down" ${i === s.rules.length - 1 ? "disabled" : ""}>↓</button>
+            <button class="small danger" data-del="rules" data-i="${i}" title="Delete rule">Delete</button>
+          </div>
+        </div>
+        <details ${hasMore(r.when) || r.note ? "open" : ""}><summary>More conditions &amp; pick-list note</summary>
+          <div class="grid">
+            <label>SKUs (all of)<input data-path="rules.${i}.when.skus" data-list value="${esc((r.when.skus || []).join(", "))}" placeholder="AVO-12, GIFT" /></label>
+            <label>Ship-to states<input data-path="rules.${i}.when.states" data-list value="${esc((r.when.states || []).join(", "))}" placeholder="CA, AZ" /></label>
+            <label>Customer's shipping choice contains<input data-path="rules.${i}.when.shippingOptionContains" data-opt value="${esc(r.when.shippingOptionContains || "")}" placeholder="Express" /></label>
+            ${opt("Min items", `rules.${i}.when.minQty`, r.when.minQty)}${opt("Max items", `rules.${i}.when.maxQty`, r.when.maxQty)}
+            ${opt("Min item weight (lb)", `rules.${i}.when.minWeightLb`, r.when.minWeightLb, 'step="0.1"')}${opt("Max item weight (lb)", `rules.${i}.when.maxWeightLb`, r.when.maxWeightLb, 'step="0.1"')}
+            <label>Pick-list note<input data-path="rules.${i}.note" data-opt value="${esc(r.note || "")}" placeholder="e.g. add ice pack" /></label>
+          </div>
+        </details>
+      </div>`).join("")}
+      <button data-add="rules">+ Add rule</button>
+    </div>
+
+    <div class="card"><h3>Defaults</h3>
+      <p class="help">Used when no rule matches.</p>
+      <div class="grid">
+        <label>Default box<select data-path="defaultBoxId">${boxOpts(s.defaultBoxId)}</select></label>
+        <label>Default service<select data-path="defaultServiceId">${svcOpts(s.defaultServiceId)}</select></label>
+        <label>Hot-weather states (flagged)<input data-path="hotStates" data-list value="${esc(s.hotStates.join(", "))}" /></label>
+        <label>Ship days (1=Mon … 7=Sun)<input data-path="shipDays" data-list-num value="${s.shipDays.join(", ")}" /></label>
+        ${field("Wholesale SKU prefix", "wholesaleSkuPrefix", "text", 'placeholder="WS-"')}
+      </div>
+    </div>
 
     <div class="card"><h3>Boxes</h3>
-      <div id="boxes">${s.boxes.map((b, i) => `<div class="grid" data-i="${i}">
-        ${field("ID", `boxes.${i}.id`)}${field("Name", `boxes.${i}.name`)}${field("L (in)", `boxes.${i}.lengthIn`, "number")}
-        ${field("W (in)", `boxes.${i}.widthIn`, "number")}${field("H (in)", `boxes.${i}.heightIn`, "number")}${field("Empty wt (lb)", `boxes.${i}.tareLb`, "number")}
-        <label>&nbsp;<button class="small" data-del="boxes" data-i="${i}">Remove</button></label>
-      </div>`).join("")}</div>
-      <button class="small" data-add="boxes">Add box</button>
+      <div class="grid head-row"><span>Name</span><span>Length (in)</span><span>Width (in)</span><span>Height (in)</span><span>Empty weight (lb)</span><span></span></div>
+      ${s.boxes.map((b, i) => `<div class="grid" data-i="${i}">
+        <input data-path="boxes.${i}.name" value="${esc(b.name)}" aria-label="Box name" />
+        <input type="number" data-path="boxes.${i}.lengthIn" value="${b.lengthIn}" aria-label="Length" />
+        <input type="number" data-path="boxes.${i}.widthIn" value="${b.widthIn}" aria-label="Width" />
+        <input type="number" data-path="boxes.${i}.heightIn" value="${b.heightIn}" aria-label="Height" />
+        <input type="number" step="0.1" data-path="boxes.${i}.tareLb" value="${b.tareLb}" aria-label="Empty weight" />
+        <button class="small danger" data-del="boxes" data-i="${i}">Remove</button>
+      </div>`).join("")}
+      <button data-add="boxes">+ Add box</button>
     </div>
 
     <div class="card"><h3>Shipping services</h3>
+      <p class="help">The Pirate Ship name must match a service in Pirate Ship's spreadsheet import exactly.</p>
+      <div class="grid head-row"><span>Name</span><span>Carrier</span><span>Pirate Ship name</span>${shippo ? "<span>Shippo token</span>" : ""}<span></span></div>
       ${s.services.map((x, i) => `<div class="grid">
-        ${field("ID", `services.${i}.id`)}${field("Name", `services.${i}.name`)}
-        <label>Carrier<select data-path="services.${i}.carrier">${["usps", "ups", "fedex"].map((c) => `<option ${c === x.carrier ? "selected" : ""}>${c}</option>`).join("")}</select></label>
-        ${field("Shippo token", `services.${i}.shippoToken`)}${field("Pirate Ship name", `services.${i}.pirateShipName`)}
-        <label>&nbsp;<button class="small" data-del="services" data-i="${i}">Remove</button></label>
+        <input data-path="services.${i}.name" value="${esc(x.name)}" aria-label="Service name" />
+        <select data-path="services.${i}.carrier" aria-label="Carrier">${["usps", "ups", "fedex"].map((c) => `<option ${c === x.carrier ? "selected" : ""}>${c}</option>`).join("")}</select>
+        <input data-path="services.${i}.pirateShipName" value="${esc(x.pirateShipName || "")}" aria-label="Pirate Ship name" />
+        ${shippo ? `<input data-path="services.${i}.shippoToken" value="${esc(x.shippoToken || "")}" aria-label="Shippo token" />` : ""}
+        <button class="small danger" data-del="services" data-i="${i}">Remove</button>
       </div>`).join("")}
-      <button class="small" data-add="services">Add service</button>
+      <button data-add="services">+ Add service</button>
     </div>
 
-    <div class="card"><h3>Rules (first match wins)</h3>
-      <div class="rule-row cond"><span></span><span>Name</span><span>Conditions</span><span>Box</span><span>Service</span><span>Pick-list note</span><span></span></div>
-      ${s.rules.map((r, i) => `<div class="rule-row">
-        <span class="mono">${i + 1}</span>
-        <input class="name" data-path="rules.${i}.name" value="${esc(r.name)}" />
-        <div class="grid" style="grid-template-columns:repeat(4,1fr)">
-          <label>Product name contains<input data-path="rules.${i}.when.productContains" value="${esc(r.when.productContains || "")}" /></label>
-          <label>SKUs (all of)<input data-path="rules.${i}.when.skus" data-list value="${esc((r.when.skus || []).join(", "))}" /></label>
-          <label>States<input data-path="rules.${i}.when.states" data-list value="${esc((r.when.states || []).join(", "))}" /></label>
-          <label>Channel<select data-path="rules.${i}.when.channel"><option value="">any</option><option ${r.when.channel === "retail" ? "selected" : ""}>retail</option><option ${r.when.channel === "wholesale" ? "selected" : ""}>wholesale</option></select></label>
-          <label>Ship option contains<input data-path="rules.${i}.when.shippingOptionContains" value="${esc(r.when.shippingOptionContains || "")}" /></label>
-          <label>Min qty<input type="number" data-path="rules.${i}.when.minQty" data-opt value="${r.when.minQty ?? ""}" /></label>
-          <label>Max qty<input type="number" data-path="rules.${i}.when.maxQty" data-opt value="${r.when.maxQty ?? ""}" /></label>
-          <label>Min wt (lb)<input type="number" step="0.1" data-path="rules.${i}.when.minWeightLb" data-opt value="${r.when.minWeightLb ?? ""}" /></label>
-          <label>Max wt (lb)<input type="number" step="0.1" data-path="rules.${i}.when.maxWeightLb" data-opt value="${r.when.maxWeightLb ?? ""}" /></label>
-          <label>Ship weight (lb)<input type="number" step="0.1" data-path="rules.${i}.packageWeightLb" data-opt value="${r.packageWeightLb ?? ""}" title="Fixed package weight when Wix products have no weight" /></label>
-        </div>
-        <select data-path="rules.${i}.boxId">${boxOpts(r.boxId)}</select>
-        <select data-path="rules.${i}.serviceId">${svcOpts(r.serviceId)}</select>
-        <input data-path="rules.${i}.note" value="${esc(r.note || "")}" placeholder="e.g. add ice pack" />
-        <div class="row-actions">
-          <button class="small" data-move="-1" data-i="${i}" title="Move up">↑</button>
-          <button class="small" data-move="1" data-i="${i}" title="Move down">↓</button>
-          <button class="small" data-del="rules" data-i="${i}">✕</button>
-        </div>
-      </div>`).join("")}
-      <p><button class="small" data-add="rules">Add rule</button></p>
-    </div>
-
-    <div class="card"><h3>Defaults</h3><div class="grid">
-      <label>Default box<select data-path="defaultBoxId">${boxOpts(s.defaultBoxId)}</select></label>
-      <label>Default service<select data-path="defaultServiceId">${svcOpts(s.defaultServiceId)}</select></label>
-      <label>Ship days (1=Mon…7=Sun)<input data-path="shipDays" data-list-num value="${s.shipDays.join(", ")}" /></label>
-      <label>Hot-weather states<input data-path="hotStates" data-list value="${esc(s.hotStates.join(", "))}" /></label>
-      ${field("Wholesale SKU prefix", "wholesaleSkuPrefix")}
+    <div class="card"><h3>Ship from</h3>
+      <p class="help">Printed as the return address on labels.</p>
+      <div class="grid">
+      ${field("Name", "shipFrom.name")}${field("Street", "shipFrom.street1")}${field("City", "shipFrom.city")}
+      ${field("State", "shipFrom.state")}${field("ZIP", "shipFrom.zip")}${field("Phone", "shipFrom.phone")}${field("Email", "shipFrom.email")}
     </div></div>`;
 
   $$("[data-path]", el).forEach((inp) =>
@@ -299,21 +415,29 @@ function renderSettings() {
       else if (inp.type === "number") v = v === "" ? undefined : Number(v);
       else if (inp.hasAttribute("data-opt") || inp.tagName === "SELECT") v = v === "" ? undefined : v;
       set(state.draft, inp.dataset.path, v);
+      markDirty(true);
     }),
   );
-  $$("[data-del]", el).forEach((b) => b.addEventListener("click", () => { state.draft[b.dataset.del].splice(+b.dataset.i, 1); state.settings = state.draft; renderSettings(); }));
+  const rerender = () => { markDirty(true); renderSettings(true); };
+  $$("[data-del]", el).forEach((b) => b.addEventListener("click", () => {
+    const k = b.dataset.del, item = state.draft[k][+b.dataset.i];
+    if (k !== "rules" && !confirm(`Remove "${item.name}"? Rules that use it will fall back to the default.`)) return;
+    state.draft[k].splice(+b.dataset.i, 1); rerender();
+  }));
   $$("[data-move]", el).forEach((b) => b.addEventListener("click", () => {
     const i = +b.dataset.i, j = i + +b.dataset.move, r = state.draft.rules;
     if (j < 0 || j >= r.length) return;
     [r[i], r[j]] = [r[j], r[i]];
-    state.settings = state.draft; renderSettings();
+    rerender();
   }));
   $$("[data-add]", el).forEach((b) => b.addEventListener("click", () => {
     const k = b.dataset.add, id = `${k.slice(0, -1)}-${Date.now().toString(36)}`;
     if (k === "boxes") state.draft.boxes.push({ id, name: "New box", lengthIn: 10, widthIn: 8, heightIn: 6, tareLb: 0.5 });
     if (k === "services") state.draft.services.push({ id, name: "New service", carrier: "usps", shippoToken: "", pirateShipName: "" });
     if (k === "rules") state.draft.rules.push({ id, name: "New rule", when: {}, boxId: state.draft.defaultBoxId, serviceId: state.draft.defaultServiceId });
-    state.settings = state.draft; renderSettings();
+    rerender();
+    const added = $$(`[data-path^="${k}."]`, el).pop();
+    added?.scrollIntoView({ block: "center" });
   }));
 }
 
@@ -325,17 +449,27 @@ function set(o, p, v) {
   if (v === undefined) delete t[last]; else t[last] = v;
 }
 
-$("#settings-save").addEventListener("click", async () => {
+async function saveSettings() {
+  const btns = [$("#settings-save"), $("#settings-save-2")];
+  btns.forEach((b) => { b.disabled = true; b.textContent = "Saving…"; });
   try {
     const saved = await api("/api/settings", { method: "PUT", body: JSON.stringify(state.draft) });
     state.settings = saved;
-    alert("Saved. Orders will be re-assigned with the new rules.");
+    markDirty(false);
+    settingsNotice("Saved. Open orders have been re-assigned with these rules.");
     loadOrders();
     renderSettings();
   } catch (e) {
-    alert(`Not saved: ${e.message}`);
+    settingsNotice(`Not saved — ${e.message}. Your edits are still here; fix and save again.`, true);
+  } finally {
+    btns.forEach((b) => { b.disabled = false; });
+    $("#settings-save").textContent = "Save";
+    $("#settings-save-2").textContent = "Save changes";
   }
-});
+}
+$("#settings-save").addEventListener("click", saveSettings);
+$("#settings-save-2").addEventListener("click", saveSettings);
+window.addEventListener("beforeunload", (e) => { if (!$("#settings-dirty").hidden) e.preventDefault(); });
 
 // ---------- boot ----------
 (async () => {

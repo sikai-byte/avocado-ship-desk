@@ -155,6 +155,13 @@ export function createApp(deps: AppDeps) {
     res.json({ ok: true, override: store.getOverrides()[req.params.id] ?? null });
   });
 
+  app.post("/api/orders/hold", (req, res) => {
+    const parsed = z.object({ orderIds: z.array(z.string()), hold: z.boolean() }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
+    for (const id of parsed.data.orderIds) store.setOverride(id, { hold: parsed.data.hold });
+    res.json({ ok: true, updated: parsed.data.orderIds.length });
+  });
+
   app.delete("/api/orders/:id/override", (req, res) => {
     store.clearOverride(req.params.id);
     res.json({ ok: true });
