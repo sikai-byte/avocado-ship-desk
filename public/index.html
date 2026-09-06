@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ship Desk</title>
+<link rel="icon" href="data:," />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<header>
+  <h1>🥑 Ship Desk</h1>
+  <nav>
+    <button data-view="board" class="active">Ship day</button>
+    <button data-view="picklist">Pick list</button>
+    <button data-view="history">Shipped</button>
+    <button data-view="settings">Rules &amp; boxes</button>
+  </nav>
+  <div id="status"></div>
+</header>
+
+<main>
+  <section id="view-board" class="view">
+    <div class="toolbar">
+      <div class="summary" id="summary"></div>
+      <div class="actions">
+        <button id="refresh" class="ghost">Refresh orders</button>
+        <a id="csv" class="btn" href="/api/export/pirateship.csv" download>Download Pirate Ship CSV</a>
+        <button id="import-btn" class="ghost">Import tracking CSV</button>
+        <input type="file" id="import-file" accept=".csv,text/csv" hidden />
+        <button id="ship-all" class="primary">Buy labels for all ready orders</button>
+      </div>
+    </div>
+    <div id="notice" class="notice" hidden></div>
+    <table id="orders">
+      <thead>
+        <tr>
+          <th>Order</th><th>Ship to</th><th>Items</th><th>Wt (lb)</th><th>Box</th><th>Service</th><th>Flags</th><th></th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <section id="view-picklist" class="view" hidden>
+    <div class="toolbar">
+      <h2>Pick list</h2>
+      <button class="ghost" onclick="window.print()">Print</button>
+    </div>
+    <div id="picklist"></div>
+  </section>
+
+  <section id="view-history" class="view" hidden>
+    <div class="toolbar">
+      <h2>Shipped</h2>
+      <a class="btn" id="merged-pdf" href="/api/labels/merged.pdf" target="_blank">Today's labels PDF</a>
+    </div>
+    <table id="history">
+      <thead><tr><th>Order</th><th>Carrier</th><th>Service</th><th>Tracking</th><th>Cost</th><th>Purchased</th><th>Store</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <section id="view-settings" class="view" hidden>
+    <div class="toolbar">
+      <h2>Rules &amp; boxes</h2>
+      <div class="actions">
+        <button id="settings-save" class="primary">Save</button>
+      </div>
+    </div>
+    <p class="help">Rules are checked top to bottom; the first match decides the box and service. Orders that match nothing use the defaults.</p>
+    <div id="settings"></div>
+  </section>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
