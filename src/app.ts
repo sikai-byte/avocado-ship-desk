@@ -47,6 +47,7 @@ const settingsSchema = z.object({
       name: z.string(),
       when: z.object({
         skus: z.array(z.string()).optional(),
+        productContains: z.string().optional(),
         minQty: z.number().optional(),
         maxQty: z.number().optional(),
         minWeightLb: z.number().optional(),
@@ -58,6 +59,7 @@ const settingsSchema = z.object({
       boxId: z.string(),
       serviceId: z.string(),
       note: z.string().optional(),
+      packageWeightLb: z.number().positive().optional(),
     }),
   ),
   defaultBoxId: z.string(),

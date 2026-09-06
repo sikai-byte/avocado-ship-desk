@@ -58,6 +58,8 @@ export interface Service {
 export interface RuleCondition {
   /** all listed SKUs must be present in the order */
   skus?: string[];
+  /** case-insensitive substring of any item's product name */
+  productContains?: string;
   /** total quantity across all items */
   minQty?: number;
   maxQty?: number;
@@ -78,6 +80,8 @@ export interface Rule {
   serviceId: string;
   /** e.g. "add ice pack" — shows on pick list */
   note?: string;
+  /** fixed total package weight (lbs) used when Wix products carry no weight */
+  packageWeightLb?: number;
 }
 
 export interface ShipSettings {

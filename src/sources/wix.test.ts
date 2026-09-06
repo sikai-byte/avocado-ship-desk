@@ -46,7 +46,7 @@ describe("wix order mapping", () => {
       calls.push({ url: String(url), body: String(init?.body) });
       const page = calls.length;
       return new Response(
-        JSON.stringify({ orders: [{ ...wixOrder, id: `o${page}` }], pagingMetadata: page === 1 ? { cursors: { next: "c2" } } : {} }),
+        JSON.stringify({ orders: [{ ...wixOrder, id: `o${page}` }], metadata: page === 1 ? { cursors: { next: "c2" }, hasNext: true } : { hasNext: false } }),
         { status: 200 },
       );
     }) as typeof fetch;

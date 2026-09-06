@@ -10,6 +10,10 @@ export function matches(cond: RuleCondition, order: Order): boolean {
     const have = new Set(order.items.map((i) => i.sku));
     if (!cond.skus.every((s) => have.has(s))) return false;
   }
+  if (cond.productContains) {
+    const needle = cond.productContains.toLowerCase();
+    if (!order.items.some((i) => i.name.toLowerCase().includes(needle))) return false;
+  }
   const qty = totalQty(order);
   if (cond.minQty !== undefined && qty < cond.minQty) return false;
   if (cond.maxQty !== undefined && qty > cond.maxQty) return false;
@@ -53,9 +57,11 @@ export function assign(order: Order, settings: ShipSettings, override?: Override
   if (order.shipTo.country !== "US") warnings.push("International address");
   if (!order.shipTo.street1 || !order.shipTo.zip) warnings.push("Incomplete address");
   if (order.buyerNote) warnings.push("Buyer note");
-  if (order.totalWeightLb <= 0) warnings.push("Missing product weights");
+  const fixedWeight = rule?.packageWeightLb;
+  if (order.totalWeightLb <= 0 && !fixedWeight) warnings.push("Missing product weights");
 
-  const packageWeightLb = round2(order.totalWeightLb + (box?.tareLb ?? 0));
+  const packageWeightLb =
+    order.totalWeightLb > 0 || !fixedWeight ? round2(order.totalWeightLb + (box?.tareLb ?? 0)) : fixedWeight;
   return { orderId: order.id, boxId, serviceId, ruleId: rule?.id, note: rule?.note, manual, warnings, packageWeightLb };
 }
 

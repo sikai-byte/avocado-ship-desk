@@ -101,7 +101,11 @@ export class WixOrderSource implements OrderSource {
           cursorPaging: cursor ? { cursor, limit: 100 } : { limit: 100 },
         },
       };
-      const data = await this.call<{ orders: WixOrder[]; pagingMetadata?: { cursors?: { next?: string } } }>(
+      const data = await this.call<{
+        orders: WixOrder[];
+        metadata?: { cursors?: { next?: string } };
+        pagingMetadata?: { cursors?: { next?: string } };
+      }>(
         "/ecom/v1/orders/search",
         body,
       );
@@ -110,7 +114,7 @@ export class WixOrderSource implements OrderSource {
         if (o.shippingInfo?.logistics?.pickupDetails) continue;
         orders.push(this.toOrder(o));
       }
-      cursor = data.pagingMetadata?.cursors?.next;
+      cursor = data.metadata?.cursors?.next ?? data.pagingMetadata?.cursors?.next;
     } while (cursor);
     return orders;
   }

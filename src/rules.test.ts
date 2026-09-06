@@ -26,6 +26,20 @@ describe("rules", () => {
     expect(a.serviceId).toBe("ups_ground");
   });
 
+  it("matches on product name substring when items have no SKU", () => {
+    const rules = [{ id: "r-choq", name: "Choquette", when: { productContains: "choquette" }, boxId: "large", serviceId: "usps_priority" }];
+    const o = order({ items: [{ id: "x", sku: "", name: "Choquette Avocado Box (late September)", quantity: 1, weightLb: 0 }] });
+    expect(firstMatchingRule(rules, o)?.id).toBe("r-choq");
+    expect(firstMatchingRule(rules, order())).toBeUndefined();
+  });
+
+  it("uses the rule's fixed package weight when items have no weight", () => {
+    const settings = { ...defaultSettings, rules: [{ id: "r", name: "r", when: { productContains: "box" }, boxId: "medium", serviceId: "usps_priority", packageWeightLb: 6 }] };
+    const a = assign(order({ items: [{ id: "x", sku: "", name: "Avocado Box", quantity: 1, weightLb: 0 }], totalWeightLb: 0 }), settings);
+    expect(a.packageWeightLb).toBe(6);
+    expect(a.warnings).not.toContain("Missing product weights");
+  });
+
   it("falls back to defaults with a warning when nothing matches", () => {
     const a = assign(order({ items: [{ id: "x", sku: "OIL-250", name: "Oil", quantity: 1, weightLb: 0.7 }], totalWeightLb: 0.7 }), defaultSettings);
     expect(a.boxId).toBe(defaultSettings.defaultBoxId);

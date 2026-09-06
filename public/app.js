@@ -260,6 +260,7 @@ function renderSettings() {
         <span class="mono">${i + 1}</span>
         <input class="name" data-path="rules.${i}.name" value="${esc(r.name)}" />
         <div class="grid" style="grid-template-columns:repeat(4,1fr)">
+          <label>Product name contains<input data-path="rules.${i}.when.productContains" value="${esc(r.when.productContains || "")}" /></label>
           <label>SKUs (all of)<input data-path="rules.${i}.when.skus" data-list value="${esc((r.when.skus || []).join(", "))}" /></label>
           <label>States<input data-path="rules.${i}.when.states" data-list value="${esc((r.when.states || []).join(", "))}" /></label>
           <label>Channel<select data-path="rules.${i}.when.channel"><option value="">any</option><option ${r.when.channel === "retail" ? "selected" : ""}>retail</option><option ${r.when.channel === "wholesale" ? "selected" : ""}>wholesale</option></select></label>
@@ -268,6 +269,7 @@ function renderSettings() {
           <label>Max qty<input type="number" data-path="rules.${i}.when.maxQty" data-opt value="${r.when.maxQty ?? ""}" /></label>
           <label>Min wt (lb)<input type="number" step="0.1" data-path="rules.${i}.when.minWeightLb" data-opt value="${r.when.minWeightLb ?? ""}" /></label>
           <label>Max wt (lb)<input type="number" step="0.1" data-path="rules.${i}.when.maxWeightLb" data-opt value="${r.when.maxWeightLb ?? ""}" /></label>
+          <label>Ship weight (lb)<input type="number" step="0.1" data-path="rules.${i}.packageWeightLb" data-opt value="${r.packageWeightLb ?? ""}" title="Fixed package weight when Wix products have no weight" /></label>
         </div>
         <select data-path="rules.${i}.boxId">${boxOpts(r.boxId)}</select>
         <select data-path="rules.${i}.serviceId">${svcOpts(r.serviceId)}</select>
