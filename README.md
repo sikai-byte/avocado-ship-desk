@@ -5,7 +5,7 @@ Ship-day order manager for a Wix store that ships perishables. Turns "key every 
 1. Open the app on ship day — paid, unshipped Wix orders are already there.
 2. Each order has a box and carrier service chosen by your rules (SKU, quantity, weight, state, wholesale). Override exceptions, hold anything you don't want to ship today.
 3. Print the pick list (per-SKU totals to pull from cold storage, then per-order contents in label order).
-4. Either **buy all labels in one click** through Shippo (one merged PDF for the label printer), or **download a Pirate Ship CSV** and bulk-import it there.
+4. **Download the Pirate Ship CSV** and bulk-import it there to buy labels at your discounted rates (optionally, buy labels directly through Shippo instead).
 5. Tracking numbers are written back to Wix as fulfillments, so customers get Wix's shipping email automatically. For Pirate Ship, upload their shipments report and the app does the same.
 
 No database — settings, overrides and label history are JSON files in `data/`. Runs on any free-tier Node host.

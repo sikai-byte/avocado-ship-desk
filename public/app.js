@@ -39,8 +39,7 @@ async function loadStatus() {
     `<span class="pill ${s.source === "wix" ? "on" : "off"}">Store: ${s.source === "wix" ? "Wix" : "sample data"}</span>` +
     `<span class="pill ${s.shippoEnabled ? "on" : "off"}">Shippo: ${s.shippoEnabled ? "connected" : "off"}</span>` +
     `<span class="pill ${s.shipDay ? "on" : ""}">${s.shipDay ? "Ship day" : "Ship days: " + s.shipDays.map((d) => days[d]).join("/")}</span>`;
-  $("#ship-all").disabled = !s.shippoEnabled;
-  $("#ship-all").title = s.shippoEnabled ? "" : "Set SHIPPO_API_KEY to buy labels here; use the Pirate Ship CSV instead.";
+  $("#ship-all").hidden = !s.shippoEnabled;
 }
 
 // ---------- board ----------
@@ -65,7 +64,8 @@ function renderBoard() {
   const weight = ready.reduce((s, r) => s + r.assignment.packageWeightLb, 0);
   $("#summary").innerHTML =
     `<b>${ready.length}</b> ready to ship · <b>${held.length}</b> held · <b>${flagged.length}</b> flagged · ${weight.toFixed(1)} lb total`;
-  $("#ship-all").textContent = `Buy labels for ${ready.length} ready order${ready.length === 1 ? "" : "s"}`;
+  $("#ship-all").textContent = `Buy ${ready.length} label${ready.length === 1 ? "" : "s"} via Shippo`;
+  $("#csv").textContent = `1. Download Pirate Ship CSV (${ready.length})`;
 
   const boxOpts = (sel) => state.settings.boxes.map((b) => `<option value="${esc(b.id)}" ${b.id === sel ? "selected" : ""}>${esc(b.name)}</option>`).join("");
   const svcOpts = (sel) => state.settings.services.map((s) => `<option value="${esc(s.id)}" ${s.id === sel ? "selected" : ""}>${esc(s.name)}</option>`).join("");
